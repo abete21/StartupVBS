@@ -1,0 +1,380 @@
+'=====================================================================
+' メニュー起動スクリプト（汎用）
+'【標準的なモジュール構成】
+' [MenuFolder]\[ReleaseDef]                   配布バージョンの指定
+' [MenuFolder]\[ModuleName]ver_yyyymmdd.accdb メニューモジュール
+' C:\Temp\[ModuleName].accdb                  ローカルに配布して起動されるメニューモジュール
+'=====================================================================
+Option Explicit
+
+Dim MenuFolder, ModuleName, ReleaseDef
+Dim RelModule, DevModule, LocModule
+Dim WS
+'----------------------------------------------------------------------
+' プロジェクト設定: プロジェクトに応じて下記の内容を変更して配布してください
+Const DBGFLG = True
+MenuFolder = "\\pi-miharuno\share\AccessProject\MenuModule\標準メニュー\"
+ModuleName = "標準メニュー"
+ReleaseDef = "標準メニュー.rel"
+'----------------------------------------------------------------------
+
+'//////////
+'  開始
+'//////////
+    Set WS = CreateObject("WScript.Shell")
+    'コンソール画面表示用にCScriptで再起動
+    If Instr(UCase(WScript.FullName),"WSCRIPT.EXE") Then
+        WS.Run """CScript.exe"" """ & WScript.ScriptFullName & """"
+        WScript.Quit
+    End If
+
+    dbgEcho "Script Name = " & Wscript.ScriptName
+    DevModule = GetDevModule
+    RelModule = GetRelModule
+    LocModule = GetLocModule
+    Echo "****************************************"
+    Echo ModuleName
+    Echo "****************************************"
+
+    If Instr(WScript.ScriptName,"開発") Then
+        dbgEcho "管理者モード"
+        Call RunAdminMenu     '管理者メニュー
+    Else
+        dbgEcho "一般モード"
+        Call RunNormalMenu   '一般用メニュー
+    End If
+
+    WScript.Sleep 2000
+    WScript.Quit
+
+'//////////////////////
+' 一般用メニュー
+'//////////////////////
+Private Sub RunNormalMenu()
+Dim FS
+    ' ローカルモジュールとリリースモジュールを比較して
+    ' 新しいものが配布されていればバージョンアップ
+    Echo "配布バージョンチェック中．"
+    If LocModule < RelModule Then
+        Echo "バージョンアップします。 " & LocModule & " => " & RelModule
+        Set FS = CreateObject("Scripting.FileSystemObject")
+        FS.CopyFile MenuFolder & ReleaseDef, "C:\Temp\"
+        FS.CopyFile MenuFolder & RelModule , "C:\Temp\" & ModuleName & ".accdb"
+        Set FS = Nothing
+    Else
+        Echo "ローカルモジュールは最新版です。"
+    End if
+    ' ローカルモジュールを起動
+    Echo ModuleName & "を起動します。"
+    WS.Run "C:\Temp\" & ModuleName & ".accdb", 1, False
+End Sub
+
+'///////////////////
+' 管理者メニュー
+'///////////////////
+Private Sub RunAdminMenu
+Dim Msg, Mode
+    Echo "<管理者用メニュー>"
+    Echo "開発モジュール：" & DevModule
+    Echo "配布モジュール：" & RelModule
+    Echo "ﾛｰｶﾙモジュール：" & LocModule
+
+    Msg = Msg & "*********************************************" & vbCrLf
+    Msg = Msg &  ModuleName & "<管理者用>"                      & vbCrLf
+    Msg = Msg & "Dev. :" & DevModule & vbCrLf
+    Msg = Msg & "Rel. :" & RelModule & vbCrLf
+    Msg = Msg & "Loc. :" & LocModule & vbCrLf
+    Msg = Msg & " コマンドを指定してください"                   & vbCrLf
+    Msg = Msg & "*********************************************" & vbCrLf
+    Msg = Msg & "-- 開発用モジュールの起動 --" & vbCrLf
+    Msg = Msg & "M: メンテナンスモード   /cmd 1 /excl" & vbCrLf
+    Msg = Msg & "S: スイッチモード       /cmd 2" & vbCrLf
+    Msg = Msg & "N: ナビゲーションモード /cmd 0" & vbCrLf & vbCrLf
+    Msg = Msg & "-- 配布用モジュールの起動 --         " & vbCrLf
+    Msg = Msg & "O:一般用メニューを起動         " & vbCrLf & vbCrLf
+    Msg = Msg & "-- モジュール操作 --" & vbCrLf
+    Msg = Msg & "D: 開発モジュールを作成" & vbCrLf
+    Msg = Msg & "R: 開発モジュールのリリース" & vbCrLf
+    Msg = Msg & "C: モジュールのコンパクト化" & vbCrLf
+    Msg = Msg & vbCrLf
+    Msg = Msg & "-: キャンセル" & vbCrLf
+
+    Mode = InputBox(Msg, ModuleName,"M")
+    Select Case Mode
+        Case "M","m"
+            Echo "開発モジュールをメンテナンスモードで起動します。"
+            dbgEcho "WS.Exec " & AccExe & Chr(34) & MenuFolder & DevModule & Chr(34) & " /excl /cmd 1"
+            WS.Exec AccExe & Chr(34) & MenuFolder & DevModule & Chr(34) & " /excl /cmd 1"
+        Case "S","s"
+            Echo "開発モジュールをスイッチモードで起動します。"
+            WS.Exec AccExe & Chr(34) & MenuFolder & DevModule & Chr(34) & " /cmd 2"
+        Case "N","n"
+            Echo "開発モジュールをナビゲーションモードで起動します。"
+            WS.Exec AccExe & Chr(34) & MenuFolder & DevModule & Chr(34) & " /cmd 0"
+        Case "O","o","0"
+            Echo "一般用メニューの起動"
+            Call RunNormalMenu
+        Case "R","r"
+            Echo "開発モジュールのリリース"
+            Call ReleaseDevModule
+        Case "D","d"
+            Echo "開発モジュールを作成"
+            Call CreateDevModule
+        Case "C","c"
+            Echo "モジュールのコンパクト化"
+            Call CompactMenu
+        Case Else
+            Echo "Cancel."
+    End Select
+End Sub
+
+'--------------------------------------------------------------
+' 開発用モジュール名（MenuFolderの最後のファイル名）を返す
+'--------------------------------------------------------------
+Private Function GetDevModule()
+Dim FS, Module
+   Set FS = CreateObject("Scripting.FileSystemObject")
+   For Each Module in FS.GetFolder(MenuFolder).Files
+      If Right(Module.Name,6) = ".accdb" Then
+         If GetDevModule < Module.Name Then GetDevModule = Module.Name
+      End If
+   Next
+   dbgEcho "GetDevModule = " & GetDevModule
+End Function
+
+'--------------------------------------------------------------
+' サーバの[ReleaseDef]に記述されたリリースモジュール名を返す
+'--------------------------------------------------------------
+Private Function GetRelModule()
+Dim FS, FO, ReleaseDefFile
+   Set FS = CreateObject("Scripting.FileSystemObject")
+   ReleaseDefFile = MenuFolder & ReleaseDef
+
+   If FS.FileExists(ReleaseDefFile) then
+       Set FO = FS.OpenTextFile(ReleaseDefFile, 1, False)
+       GetRelModule=FO.ReadLine
+       Set FO = Nothing
+   Else
+       Echo "<<<< 注意 !!!>>>>"
+       Echo "リリース定義ファイルがありません！"
+       Echo "    File= "& ReleaseDefFile
+   End If
+   Set FS = Nothing
+   dbgEcho "GetRelModule = " & GetRelModule
+End Function
+
+'--------------------------------------------------------------
+' ローカルの[ReleaseDef]に記述されたローカルモジュール名を返す
+'--------------------------------------------------------------
+Private Function GetLocModule()
+Dim FS, FO, ReleaseDefFile, CurrentAccFile
+   ReleaseDefFile = "C:\Temp\" & ReleaseDef
+   CurrentAccFile = "C:\Temp\" & ModuleName & ".accdb"
+   Set FS = CreateObject("Scripting.FileSystemObject")
+   If FS.FileExists(ReleaseDefFile) And FS.FileExists(CurrentAccFile) Then
+       Set FO = FS.OpenTextFile(ReleaseDefFile, 1, False)
+       GetLocModule= FO.ReadLine
+       Set FO = Nothing
+   End If
+   Set FS=Nothing
+   dbgEcho "GetLocModule = " & GetLocModule
+End Function
+
+'-------------------------------
+' MSACCESS.exeのフルパスを返す
+'-------------------------------
+Private Function AccExe()
+Dim i, Acc(10), FSO
+    Acc(1) = "C:\Program Files (x86)\Microsoft Office\root\Office14\MSACCESS.exe"
+    Acc(2) = "C:\Program Files (x86)\Microsoft Office\root\Office16\MSACCESS.exe"
+    Acc(3) = "C:\Program Files\Microsoft Office\root\Office14\MSACCESS.exe"
+    Acc(4) = "C:\Program Files\Microsoft Office\root\Office16\MSACCESS.exe"
+    Set FSO=CreateObject("Scripting.FileSystemObject")
+    For i = 1 to 4
+        If FSO.FileExists(Acc(i)) Then
+            AccExe = Acc(i) & " "
+            Exit Function
+        End If
+    Next
+    MsgBox "Microsoft Accessがインストールされていないようです。"
+'    WScript.Quit
+End Function
+
+'----------------------------
+' Console Echoを表示する
+'----------------------------
+Private Sub Echo(Msg)
+    WScript.Echo Msg
+End Sub
+
+Private Sub dbgEcho(Msg)
+    If DBGFLG Then Echo "dbglog: " & Msg
+End Sub
+
+
+'********************************
+' 開発用バージョンを作成する
+'********************************
+Private Sub CreateDevModule()
+Dim Msg, Ver, NewModule
+    Echo "開発モジュール:" & DevModule
+    Echo "配布モジュール:" & RelModule
+    If RelModule < DevModule Then
+        MsgBox "既に開発用バージョンが存在しています。コマンドはキャンセルします。"
+    Else
+        NewModule = ModuleName & "[Ver]_" & Replace(FormatDateTime(Date,0),"/","") & ".accdb"
+        Msg = "配布用モジュールをコピーして開発用モジュールを作成します。" & vbCrLf & _
+               RelModule & vbCrLf & _
+               NewModule & vbCrLf & _
+              "バージョン番号[Ver]を入力してください。"
+        Ver = InputBox(Msg)
+        If "" < Ver Then
+            NewModule = Replace(NewModule,"[Ver]",Ver)
+'            NewModule = ModuleName & Ver & Format(Now(),"_yyyymmdd") & ".accdb"
+            MsgBox NewModule
+            Msg = "配布用モジュールをコピーして開発用モジュールを作成します。" & vbCrLf & _
+                   RelModule & " ->" & vbCrLf & _
+                   NewModule
+            If MsgBox(Msg,vbYesNo) = vbYes Then
+                 CreateObject("Scripting.FileSystemObject").CopyFile MenuFolder & RelModule, MenuFolder & NewModule
+                 MsgBox "作成しました。開発用モジュールを開いてバージョンも更新してください。"
+            Else
+                 Echo "Cancel."
+            End If
+        Else
+            Echo "Cancel."
+        End If
+    End If
+End Sub
+
+'********************************
+' 開発用バージョンをリリースする
+'********************************
+Private Sub ReleaseDevModule()
+Dim Msg, FSys, FName, FO
+    Msg = "開発用モジュールをコンパクト化して配布用にリリースします。" & vbCrLf & _
+          "実行してよろしいですか？"
+    If MsgBox(Msg, vbYesNo) = vbYes Then
+        '--開発モジュールをコンパクト化
+        Call DBOptimize(MenuFolder & DevModule)
+
+        '--リリースファイルを書き換え
+        FName = MenuFolder & ReleaseDef
+
+        Set FSys = CreateObject("Scripting.FileSystemObject")
+        Set FO = FSys.OpenTextFile(FName, 2, True)
+        FO.WriteLine DevModule
+        Echo "'" & DevModule & "' write into " & FName
+        MsgBox "リリースしました。通常メニューで起動して新しいバージョンになっていることを確認して下さい。"
+     Else
+        Echo "Cancel."
+     End If
+End Sub
+
+'**********************************
+' メニューモジュールのコンパクト化
+'**********************************
+Private Sub CompactMenu()
+Dim Msg, SelMode
+    Msg = "メニューモジュールをコンパクト化します。モジュールを選択してください。" & vbCrLf & _
+          " 1:開発用:" & DevModule & vbCrLf & _
+          " 2:配布用:" & RelModule
+    SelMode = InputBox(Msg, "DB Compact")
+    '
+    Select Case SelMode
+    Case "1"
+        Call DBOptimize(MenuFolder & DevModule)
+        MsgBox "開発モジュールをコンパクト化しました。" & vbCrLf & DevModule
+    Case "2"
+        Call DBOptimize(MenuFolder & RelModule)
+        MsgBox "配布用モジュールをコンパクト化しました。" & vbCrLf & RelModule
+    Case Else
+        Echo "Cancel."
+    End Select
+End Sub
+
+'************
+' 圧縮最適化
+'************
+Private Sub DBOptimize(FullName)
+Dim Ret, FSO, tmpDB
+    Echo "Optimize module " & FullName
+    tmpDB = "C:\Temp\CompactDB.accdb"
+    Set FSO = CreateObject("Scripting.FileSystemObject")
+    FSO.CopyFile FullName, tmpDB
+    Set Ret = WS.Exec(AccExe & Chr(34) & tmpDB & Chr(34) & " /compact")
+    Do While Ret.Status = 0
+         WScript.Sleep 500
+    Loop
+    If Err.Number = 0 then
+        FSO.CopyFile tmpDB, FullName
+        Echo "Module is optimized successful."
+        FSO.DeleteFile tmpDB
+    Else
+        Echo "Module optimize error."
+    End If
+    Set FSO = Nothing
+End Sub
+
+'**********************************
+' フォルダのバックアップを作成する
+'**********************************
+Private Function FolderBackUp(SrcPath)
+Dim DestPath, FSO
+    DestPath = BakFolder & "BackUp\" & LsName(SrcPath)  _
+                & Replace(FormatDateTime(Now,2),"/","") & "_"  _
+                & Replace(FormatDateTime(Now,4),":","") & "\"
+    Set FSO = CreateObject("Scripting.FileSystemObject")
+    FSO.CreateFolder DestPath
+    FSO.CopyFile SrcPath & "*.*" , DestPath
+    FolderBackup = DestPath
+End Function
+
+Private Function LsName(Path)
+Dim i, c
+    For i = Len(Path) - 1 To 1 Step -1
+        c = Mid(Path,i,1)
+        If c= "\" then Exit For
+        lsName = c & LsName
+    Next
+End Function
+
+'****************************************
+' 対象モジュールのバックアップを作成する
+'****************************************
+Private Function MakeBackup(Target)
+Dim SQL, cn, rs, RelVer, RelDat, BakModule
+    SQL = "Select Version, 対応日 FROM _Version WHERE ID = (SELECT Max(ID) FROM _Version)"
+    Set cn = CreateObject("ADODB.Connection")
+    Set rs = CreateObject("ADODB.Recordset")
+    cn.Open "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=" & Target
+    rs.Open SQL, cn, 0, 1
+        RelVer = rs("Version")
+        RelDat = rs("対応日")
+    rs.Close
+    Set rs = Nothing
+    Set cn = Nothing
+    BakModule = BakFolder & Replace(RelFile,".accdb","") & "_" & RelVer & "_" & Replace(Left(RelDat, 10),"/","-") & ".accdb"
+'    Call ChkOK("BakUp Name = " & BakModule)
+    CreateObject("Scripting.FileSystemObject").CopyFile Target, BakModule
+    MakeBackup = BakModule
+End Function
+
+Private Sub ChkOK(Msg)
+   If MsgBox(Msg, vbYesNo)<> vbYes Then
+    QQQUit
+   End If
+End Sub
+
+'**************************************************
+' OSチェック。64bitならWow64\WScriptで起動しなおし
+'**************************************************
+Private Sub RunCScript()
+Dim ARCH,CMD
+    ARCH = WS.ExpandEnvironmentStrings("%PROCESSOR_ARCHITECTURE%")
+    If ARCH <> "x86" Then
+        CMD = """C:\Windows\SysWow64\Cscript.exe"" """ & WScript.ScriptFullName & """"
+        WS.Run CMD, 1, False
+        WScript.Quit
+    End If
+End Sub
